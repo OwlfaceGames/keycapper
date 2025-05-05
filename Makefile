@@ -1,8 +1,16 @@
 
-# Compiler and flags
+# Compiler and flags for Mac with Homebrew
 CC = gcc
-CFLAGS = -Wall -std=c99
-LDFLAGS = -lSDL2 -lSDL2_ttf
+CFLAGS = -Wall -std=c99 -ObjC
+
+# Determine Homebrew prefix (handles both Intel and Apple Silicon Macs)
+BREW_PREFIX := $(shell brew --prefix)
+
+# Add Homebrew include paths
+CFLAGS += -I$(BREW_PREFIX)/include
+
+# Add Homebrew library paths and required libraries
+LDFLAGS = -L$(BREW_PREFIX)/lib -lSDL2 -lSDL2_ttf -framework ApplicationServices -framework CoreFoundation
 
 # Directories
 SRC_DIR = src
