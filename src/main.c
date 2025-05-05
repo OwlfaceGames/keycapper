@@ -418,7 +418,8 @@ int main(int argc, char *argv[]) {
   // Define colors
   SDL_Color textColor = {255, 255, 255, 255};  // White
   SDL_Color bgColor = {0, 0, 0, 255};          // Black background for text
-  SDL_Color chromaKeyColor = {0, 255, 0, 255}; // Chroma key green
+  // SDL_Color chromaKeyColor = {0, 255, 0, 255}; // Chroma key green
+  SDL_Color chromaKeyColor = {0, 0, 0, 0}; // Chroma key green
 
   // Initialize key displays
   for (int i = 0; i < MAX_KEYS; i++) {
