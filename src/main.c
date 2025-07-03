@@ -1,13 +1,23 @@
+#ifdef _WIN32
+#define SDL_MAIN_HANDLED
+#endif
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
-// Include macOS-specific headers for global event monitoring
+// Include platform-specific headers for global event monitoring
 #ifdef __APPLE__
 #include <ApplicationServices/ApplicationServices.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
+#endif
+#ifdef _WIN32
+// Windows-specific includes (if needed)
+#include <SDL.h>
+#include <SDL_ttf.h>
+#include <windows.h>
+#include <process.h>
 #endif
 
 #define WINDOW_WIDTH 1280
@@ -20,7 +30,7 @@
 #define LEFT_MARGIN 50      // Left margin for alignment
 #define RIGHT_MARGIN 50     // Right margin for alignment
 #define MAX_WIDTH (WINDOW_WIDTH - LEFT_MARGIN - RIGHT_MARGIN)
-#define BUTTON_WIDTH 120 // Width of the toggle button
+#define BUTTON_WIDTH 160 // Width of the toggle button (wider for monospaced font)
 #define BUTTON_HEIGHT 40 // Height of the toggle button
 
 typedef struct {
@@ -46,6 +56,108 @@ TTF_Font *buttonFont = NULL; // Font for button text
 bool shouldQuit = false;     // Global flag for quitting
 bool rightAligned = false;   // Flag for right-to-left alignment
 Button toggleButton;         // Toggle button for alignment
+
+// Global variables for hook
+HHOOK g_hHook = NULL;
+HANDLE g_hThread = NULL;
+HWND g_hwnd = NULL;
+
+// Helper to convert virtual key to readable key name using GetKeyNameText
+void push_sdl_keyevent_from_vk(WPARAM vkCode, LPARAM lParam) {
+    char keyName[64] = {0};
+    // Normalize common modifiers and special keys by VK code
+    switch (vkCode) {
+        case 0xA0: // VK_LSHIFT
+        case 0xA1: // VK_RSHIFT
+            strcpy(keyName, "Shift");
+            break;
+        case 0xA2: // VK_LCONTROL
+        case 0xA3: // VK_RCONTROL
+            strcpy(keyName, "Ctrl");
+            break;
+        case 0xA4: // VK_LMENU (Alt)
+        case 0xA5: // VK_RMENU (Alt)
+            strcpy(keyName, "Alt");
+            break;
+        case 0x5B: // VK_LWIN
+        case 0x5C: // VK_RWIN
+            strcpy(keyName, "Win");
+            break;
+        case 0x14: // VK_CAPITAL
+            strcpy(keyName, "Caps");
+            break;
+        case 0x09: // VK_TAB
+            strcpy(keyName, "Tab");
+            break;
+        case 0x0D: // VK_RETURN
+            strcpy(keyName, "Return");
+            break;
+        case 0x1B: // VK_ESCAPE
+            strcpy(keyName, "Esc");
+            break;
+        case 0x08: // VK_BACK
+            strcpy(keyName, "Bksp");
+            break;
+        case 0x20: // VK_SPACE
+            strcpy(keyName, "Space");
+            break;
+        default: {
+            UINT scanCode = ((KBDLLHOOKSTRUCT*)lParam)->scanCode;
+            LONG lParamKey = (scanCode << 16);
+            if (((KBDLLHOOKSTRUCT*)lParam)->flags & LLKHF_EXTENDED) {
+                lParamKey |= (1 << 24);
+            }
+            int len = GetKeyNameTextA(lParamKey, keyName, sizeof(keyName));
+            if (len <= 0) {
+                snprintf(keyName, sizeof(keyName), "VK_%02X", (unsigned int)vkCode);
+            } else {
+                // Robust normalization: check for any left/right or synonyms
+                if (strstr(keyName, "Shift") || strstr(keyName, "shift")) strcpy(keyName, "Shift");
+                else if (strstr(keyName, "Control") || strstr(keyName, "Ctrl") || strstr(keyName, "control") || strstr(keyName, "ctrl")) strcpy(keyName, "Ctrl");
+                else if (strstr(keyName, "Alt") || strstr(keyName, "alt")) strcpy(keyName, "Alt");
+                else if (strstr(keyName, "Win") || strstr(keyName, "win") || strstr(keyName, "Windows") || strstr(keyName, "windows")) strcpy(keyName, "Win");
+            }
+        }
+    }
+    // Post to SDL event loop
+    char *keyCopy = _strdup(keyName);
+    SDL_Event sdlEvent;
+    sdlEvent.type = SDL_USEREVENT;
+    sdlEvent.user.code = 1;
+    sdlEvent.user.data1 = keyCopy;
+    sdlEvent.user.data2 = NULL;
+    SDL_PushEvent(&sdlEvent);
+}
+
+LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode == HC_ACTION) {
+        KBDLLHOOKSTRUCT *p = (KBDLLHOOKSTRUCT *)lParam;
+        if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
+            push_sdl_keyevent_from_vk(p->vkCode, lParam);
+        }
+    }
+    return CallNextHookEx(g_hHook, nCode, wParam, lParam);
+}
+
+unsigned __stdcall KeyboardHookThread(void *param) {
+    g_hHook = SetWindowsHookExA(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
+    if (!g_hHook) {
+        MessageBoxA(NULL, "Failed to install keyboard hook!", "Error", MB_OK);
+        return 1;
+    }
+    MSG msg;
+    while (GetMessageA(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+    }
+    UnhookWindowsHookEx(g_hHook);
+    return 0;
+}
+
+void setupGlobalKeyCapture() {
+    // Start the keyboard hook in a separate thread
+    _beginthreadex(NULL, 0, KeyboardHookThread, NULL, 0, NULL);
+}
 
 void addKeyDisplay(const char *keyName, int width, int height) {
   // Find an inactive slot or reuse the oldest one if all are active
@@ -405,6 +517,11 @@ void setupGlobalKeyCapture() {
 }
 #endif
 
+#ifdef _WIN32
+// Windows stub for global key capture (not implemented)
+// You may implement global key capture for Windows here if desired
+#endif
+
 int main(int argc, char *argv[]) {
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) < 0) {
     printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
@@ -439,13 +556,8 @@ int main(int argc, char *argv[]) {
   }
 
   // Load main font for keys
-  font = TTF_OpenFont("/Users/nick/Library/Fonts/PixelifySans[wght].ttf", FONT_SIZE);
-  if (!font) {
-    font = TTF_OpenFont("/System/Library/Fonts/Helvetica.ttc", FONT_SIZE);
-  }
-  if (!font) {
-    font = TTF_OpenFont("/Library/Fonts/Arial.ttf", FONT_SIZE);
-  }
+  font = TTF_OpenFont("./PixelifySans[wght].ttf", FONT_SIZE);
+
   if (!font) {
     printf("Failed to load font! TTF_Error: %s\n", TTF_GetError());
     printf("Please provide a font file.\n");
@@ -457,15 +569,7 @@ int main(int argc, char *argv[]) {
   }
 
   // Load smaller font for button
-  buttonFont =
-      TTF_OpenFont("/System/Library/Fonts/SFNSDisplay.ttf", BUTTON_FONT_SIZE);
-  if (!buttonFont) {
-    buttonFont =
-        TTF_OpenFont("/System/Library/Fonts/Helvetica.ttc", BUTTON_FONT_SIZE);
-  }
-  if (!buttonFont) {
-    buttonFont = TTF_OpenFont("/Library/Fonts/Arial.ttf", BUTTON_FONT_SIZE);
-  }
+  buttonFont = TTF_OpenFont("./JetBrainsMono-Medium.ttf", BUTTON_FONT_SIZE);
   if (!buttonFont) {
     // Fall back to main font if button font can't be loaded
     buttonFont = font;
@@ -489,6 +593,10 @@ int main(int argc, char *argv[]) {
 
 // For Mac, set up global key capture
 #ifdef __APPLE__
+  setupGlobalKeyCapture();
+#endif
+
+#ifdef _WIN32
   setupGlobalKeyCapture();
 #endif
 
