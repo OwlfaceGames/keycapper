@@ -1,3 +1,4 @@
+
 #ifdef _WIN32
 #define SDL_MAIN_HANDLED
 #endif
@@ -5,24 +6,31 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 // Include platform-specific headers for global event monitoring
 #ifdef __APPLE__
 #include <ApplicationServices/ApplicationServices.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <dispatch/dispatch.h>
 #endif
+
 #ifdef _WIN32
-// Windows-specific includes (if needed)
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <windows.h>
 #include <process.h>
 #endif
 
+#ifdef __linux__
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
+#endif
+
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
-#define MAX_KEYS 64         // Inureased to handle more keys
+#define MAX_KEYS 64         // Increased to handle more keys
 #define FADE_DURATION 2000  // Time in milliseconds for keys to fade out
 #define KEY_GAP 4           // 4 pixel gap between keys
 #define FONT_SIZE 36        // Larger text size
@@ -57,7 +65,8 @@ bool shouldQuit = false;     // Global flag for quitting
 bool rightAligned = false;   // Flag for right-to-left alignment
 Button toggleButton;         // Toggle button for alignment
 
-// Global variables for hook
+// Windows-specific global variables
+#ifdef _WIN32
 HHOOK g_hHook = NULL;
 HANDLE g_hThread = NULL;
 HWND g_hwnd = NULL;
@@ -158,6 +167,7 @@ void setupGlobalKeyCapture() {
     // Start the keyboard hook in a separate thread
     _beginthreadex(NULL, 0, KeyboardHookThread, NULL, 0, NULL);
 }
+#endif
 
 void addKeyDisplay(const char *keyName, int width, int height) {
   // Find an inactive slot or reuse the oldest one if all are active
@@ -185,6 +195,7 @@ void addKeyDisplay(const char *keyName, int width, int height) {
   lastKeyPressTime = SDL_GetTicks();
 }
 
+#ifdef __APPLE__
 const char *getMacKeyName(int keyCode) {
   static char buffer[32];
 
@@ -291,100 +302,6 @@ const char *getMacKeyName(int keyCode) {
   }
 }
 
-// Pre-measure text dimensions
-void measureText(TTF_Font *font, const char *text, int *width, int *height) {
-  TTF_SizeText(font, text, width, height);
-}
-
-// Initialize the toggle button
-void initToggleButton() {
-  toggleButton.rect.x =
-      WINDOW_WIDTH - BUTTON_WIDTH - 20; // 20px from right edge
-  toggleButton.rect.y =
-      WINDOW_HEIGHT - BUTTON_HEIGHT - 20; // 20px from bottom edge
-  toggleButton.rect.w = BUTTON_WIDTH;
-  toggleButton.rect.h = BUTTON_HEIGHT;
-  strcpy(toggleButton.text, "Toggle Align");
-  toggleButton.hovered = false;
-  toggleButton.pressed = false;
-}
-
-// Check if a point is inside the button
-bool isPointInButton(int x, int y, Button *button) {
-  return (x >= button->rect.x && x < button->rect.x + button->rect.w &&
-          y >= button->rect.y && y < button->rect.y + button->rect.h);
-}
-
-// Draw the toggle button
-void drawButton(SDL_Renderer *renderer, TTF_Font *font, Button *button) {
-  // Draw button background
-  SDL_Color bgColor = {100, 100, 100, 255}; // Gray background
-  if (button->hovered) {
-    bgColor.r = 120;
-    bgColor.g = 120;
-    bgColor.b = 120;
-  }
-  if (button->pressed) {
-    bgColor.r = 80;
-    bgColor.g = 80;
-    bgColor.b = 80;
-  }
-
-  SDL_SetRenderDrawColor(renderer, bgColor.r, bgColor.g, bgColor.b, bgColor.a);
-  SDL_RenderFillRect(renderer, &button->rect);
-
-  // Draw button border
-  SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255);
-  SDL_RenderDrawRect(renderer, &button->rect);
-
-  // Draw button text
-  SDL_Color textColor = {255, 255, 255, 255}; // White text
-  SDL_Surface *textSurface =
-      TTF_RenderText_Blended(font, button->text, textColor);
-  if (textSurface) {
-    SDL_Texture *textTexture =
-        SDL_CreateTextureFromSurface(renderer, textSurface);
-
-    // Center text in button
-    SDL_Rect textRect = {button->rect.x + (button->rect.w - textSurface->w) / 2,
-                         button->rect.y + (button->rect.h - textSurface->h) / 2,
-                         textSurface->w, textSurface->h};
-
-    SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
-
-    SDL_FreeSurface(textSurface);
-    SDL_DestroyTexture(textTexture);
-  }
-}
-
-// Process a key press
-void processKeyPress(const char *keyName) {
-  // Pre-measure the key width and height before adding it
-  int keyWidth, keyHeight;
-  measureText(font, keyName, &keyWidth, &keyHeight);
-
-  // Check if we need to wrap to the beginning
-  if (currentLineWidth + keyWidth + (currentLineWidth > 0 ? KEY_GAP : 0) >
-      MAX_WIDTH) {
-    // Reset all keys to start a new line
-    for (int i = 0; i < MAX_KEYS; i++) {
-      keyDisplays[i].active = false;
-    }
-    activeKeyCount = 0;
-    currentLineWidth = 0;
-  }
-
-  // Add key to display
-  addKeyDisplay(keyName, keyWidth, keyHeight);
-
-  // Update current line width (add key width + gap)
-  if (currentLineWidth > 0) {
-    currentLineWidth += KEY_GAP;
-  }
-  currentLineWidth += keyWidth;
-}
-
-#ifdef __APPLE__
 // macOS global key event callback
 CGEventRef keyboardCaptureCallback(CGEventTapProxy proxy, CGEventType type,
                                    CGEventRef event, void *refcon) {
@@ -517,10 +434,105 @@ void setupGlobalKeyCapture() {
 }
 #endif
 
-#ifdef _WIN32
-// Windows stub for global key capture (not implemented)
-// You may implement global key capture for Windows here if desired
+#ifdef __linux__
+// Linux stub - you would implement Linux-specific key capture here
+void setupGlobalKeyCapture() {
+    printf("Global key capture not implemented for Linux yet.\n");
+}
 #endif
+
+// Pre-measure text dimensions
+void measureText(TTF_Font *font, const char *text, int *width, int *height) {
+  TTF_SizeText(font, text, width, height);
+}
+
+// Initialize the toggle button
+void initToggleButton() {
+  toggleButton.rect.x =
+      WINDOW_WIDTH - BUTTON_WIDTH - 20; // 20px from right edge
+  toggleButton.rect.y =
+      WINDOW_HEIGHT - BUTTON_HEIGHT - 20; // 20px from bottom edge
+  toggleButton.rect.w = BUTTON_WIDTH;
+  toggleButton.rect.h = BUTTON_HEIGHT;
+  strcpy(toggleButton.text, "Toggle Align");
+  toggleButton.hovered = false;
+  toggleButton.pressed = false;
+}
+
+// Check if a point is inside the button
+bool isPointInButton(int x, int y, Button *button) {
+  return (x >= button->rect.x && x < button->rect.x + button->rect.w &&
+          y >= button->rect.y && y < button->rect.y + button->rect.h);
+}
+
+// Draw the toggle button
+void drawButton(SDL_Renderer *renderer, TTF_Font *font, Button *button) {
+  // Draw button background
+  SDL_Color bgColor = {100, 100, 100, 255}; // Gray background
+  if (button->hovered) {
+    bgColor.r = 120;
+    bgColor.g = 120;
+    bgColor.b = 120;
+  }
+  if (button->pressed) {
+    bgColor.r = 80;
+    bgColor.g = 80;
+    bgColor.b = 80;
+  }
+
+  SDL_SetRenderDrawColor(renderer, bgColor.r, bgColor.g, bgColor.b, bgColor.a);
+  SDL_RenderFillRect(renderer, &button->rect);
+
+  // Draw button border
+  SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255);
+  SDL_RenderDrawRect(renderer, &button->rect);
+
+  // Draw button text
+  SDL_Color textColor = {255, 255, 255, 255}; // White text
+  SDL_Surface *textSurface =
+      TTF_RenderText_Blended(font, button->text, textColor);
+  if (textSurface) {
+    SDL_Texture *textTexture =
+        SDL_CreateTextureFromSurface(renderer, textSurface);
+
+    // Center text in button
+    SDL_Rect textRect = {button->rect.x + (button->rect.w - textSurface->w) / 2,
+                         button->rect.y + (button->rect.h - textSurface->h) / 2,
+                         textSurface->w, textSurface->h};
+
+    SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+
+    SDL_FreeSurface(textSurface);
+    SDL_DestroyTexture(textTexture);
+  }
+}
+
+// Process a key press
+void processKeyPress(const char *keyName) {
+  // Pre-measure the key width and height before adding it
+  int keyWidth, keyHeight;
+  measureText(font, keyName, &keyWidth, &keyHeight);
+
+  // Check if we need to wrap to the beginning
+  if (currentLineWidth + keyWidth + (currentLineWidth > 0 ? KEY_GAP : 0) >
+      MAX_WIDTH) {
+    // Reset all keys to start a new line
+    for (int i = 0; i < MAX_KEYS; i++) {
+      keyDisplays[i].active = false;
+    }
+    activeKeyCount = 0;
+    currentLineWidth = 0;
+  }
+
+  // Add key to display
+  addKeyDisplay(keyName, keyWidth, keyHeight);
+
+  // Update current line width (add key width + gap)
+  if (currentLineWidth > 0) {
+    currentLineWidth += KEY_GAP;
+  }
+  currentLineWidth += keyWidth;
+}
 
 int main(int argc, char *argv[]) {
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) < 0) {
@@ -578,8 +590,7 @@ int main(int argc, char *argv[]) {
   // Define colors
   SDL_Color textColor = {255, 255, 255, 255}; // White
   SDL_Color bgColor = {0, 0, 0, 255};         // Black background for text
-  // SDL_Color chromaKeyColor = {0, 255, 0, 255}; // Chroma key green
-  SDL_Color chromaKeyColor = {0, 0, 0, 0}; // Chroma key green
+  SDL_Color chromaKeyColor = {0, 0, 0, 0};    // Transparent background
 
   // Initialize key displays
   for (int i = 0; i < MAX_KEYS; i++) {
@@ -591,14 +602,8 @@ int main(int argc, char *argv[]) {
   // Initialize toggle button
   initToggleButton();
 
-// For Mac, set up global key capture
-#ifdef __APPLE__
+  // Set up global key capture for all platforms
   setupGlobalKeyCapture();
-#endif
-
-#ifdef _WIN32
-  setupGlobalKeyCapture();
-#endif
 
   // Main loop
   bool quit = false;
@@ -646,7 +651,7 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    // Clear screen with chroma key green
+    // Clear screen with transparent background
     SDL_SetRenderDrawColor(renderer, chromaKeyColor.r, chromaKeyColor.g,
                            chromaKeyColor.b, chromaKeyColor.a);
     SDL_RenderClear(renderer);
