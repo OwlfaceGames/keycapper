@@ -1,0 +1,2 @@
+# Keycapper
+Keycapper is a shoddy litty program that made almost entirely with AI purely because I very quickly wanted a window to capture for my livestreams to show my keyboard input on screen in a way thay fit a retro game game aesthetic. Perhaps One day I will refactor and tidy things up but for now it does the job for me just fine.
